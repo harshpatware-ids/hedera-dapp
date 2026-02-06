@@ -1,52 +1,33 @@
 import {
   TokenCreateTransaction,
-  Hbar,
-  Client,
-  AccountId,
-  PrivateKey,
+  TokenType,
+  TokenSupplyType,
 } from "@hashgraph/sdk";
 
-const tokenCreateFcn = async (walletProvider, accountId) => {
-  try {
-    console.log("🚀 Creating HTS token on Hedera Testnet...");
-
-    if (!walletProvider || !accountId) {
-      throw new Error("Missing wallet provider or account ID");
-    }
-
-    // Create client (wallet as treasury)
-    const client = Client.forTestnet().setOperator(
-      AccountId.fromString(accountId),
-      PrivateKey.generateED25519()
-    );
-
-    // Build token creation transaction
-    const tokenCreateTx = await new TokenCreateTransaction()
-      .setTokenName("MyToken")
-      .setTokenSymbol("MTK")
-      .setDecimals(2)
-      .setInitialSupply(1000)
-      .setTreasuryAccountId(accountId)
-      .setMaxTransactionFee(new Hbar(2))
-      .freezeWith(client);
-    const Buffer = await import("buffer").then((mod) => mod.Buffer);
-    // Convert to bytes and then hex for EVM provider
-    const txBytes = Buffer.from(await tokenCreateTx.toBytes());
-    const txHex = "0x" + txBytes.toString("hex"); // ✅ proper format
-
-    console.log("🧾 Prepared transaction for EVM wallet signing");
-
-    // Send through provider (AppKit/Reown compatible)
-    const response = await walletProvider.request({
-      method: "eth_sendRawTransaction",
-      params: [txHex],
-    });
-
-    console.log("✅ Token creation transaction submitted:", response);
-    return response;
-  } catch (error) {
-    console.error("❌ Error creating token:", error);
-    throw error;
+export default async function tokenCreate(connector) {
+  const signer = connector.signers?.[0];
+  if (!signer) {
+    throw new Error("No Hedera signer available");
   }
-};
-export default tokenCreateFcn;
+
+  const accountId = signer.getAccountId();
+console.log(accountId)
+  // Build transaction (DO NOT freeze manually)
+  const tx = new TokenCreateTransaction()
+    .setTokenName("MyToken")
+    .setTokenSymbol("MTK")
+    .setTokenType(TokenType.FungibleCommon)
+    .setDecimals(2)
+    .setInitialSupply(1000)
+    .setTreasuryAccountId(accountId)
+    .setSupplyType(TokenSupplyType.Infinite);
+
+  // 🔥 THIS IS THE ONLY VALID EXECUTION CALL
+  const response = await signer.executeTransaction(tx);
+
+  if (!response?.receipt?.tokenId) {
+    throw new Error("Token creation failed");
+  }
+
+  return response.receipt.tokenId.toString();
+}
